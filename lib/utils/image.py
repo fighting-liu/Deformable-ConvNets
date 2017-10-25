@@ -1,10 +1,29 @@
 import numpy as np
 import os
 import cv2
+import skimage.io as si
+import skimage.transform as st
 import random
+import requests
+
 from PIL import Image
 from bbox.bbox_transform import clip_boxes
 
+
+cv_session = requests.Session()
+cv_session.trust_env = False
+def cv_load_image(in_, type_='path'):
+    '''
+    Return
+        image: opencv format np.array. (C x H x W) in BGR np.uint8
+    '''
+    if type_ == 'url':
+        img_nparr = np.fromstring(cv_session.get(in_).content, np.uint8)
+        img = cv2.imdecode(img_nparr, cv2.IMREAD_COLOR)
+    else:
+        img = cv2.imread(in_)
+
+    return img 
 
 # TODO: This two functions should be merged with individual data loader
 def get_image(roidb, config):
@@ -22,8 +41,25 @@ def get_image(roidb, config):
     processed_roidb = []
     for i in range(num_images):
         roi_rec = roidb[i]
-        assert os.path.exists(roi_rec['image']), '%s does not exist'.format(roi_rec['image'])
-        im = cv2.imread(roi_rec['image'], cv2.IMREAD_COLOR|cv2.IMREAD_IGNORE_ORIENTATION)
+       # print roi_rec['image']
+        
+        ####################################
+        if roi_rec['image'][:4] == 'http':
+            im = cv_load_image(in_=roi_rec['image'], type_='url')
+            assert im is not None
+        else:
+            assert os.path.exists(roi_rec['image']), '{} does not exist'.format(roi_rec['image'])
+            im = cv_load_image(in_=roi_rec['image'], type_='path')
+                
+        ####################################to do
+        # print '@@@@@@@@@ 1'
+        # print roi_rec['image']
+        # print cv2
+        # im = cv2.imread(roi_rec['image'])
+        # im = cv2.imread(roi_rec['image'], cv2.IMREAD_COLOR|cv2.IMREAD_IGNORE_ORIENTATION)
+        # im = si.imread(roi_rec['image'])[:,:,(2,1,0)]
+        # print '@@@@@@@@@ 2'
+
         if roidb[i]['flipped']:
             im = im[:, ::-1, :]
         new_rec = roi_rec.copy()
@@ -31,9 +67,12 @@ def get_image(roidb, config):
         target_size = config.SCALES[scale_ind][0]
         max_size = config.SCALES[scale_ind][1]
         im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        ## mean substraction
         im_tensor = transform(im, config.network.PIXEL_MEANS)
         processed_ims.append(im_tensor)
+        ## im_info: [input_H, input_W, im_scale=target_size/min(H,W)]
         im_info = [im_tensor.shape[2], im_tensor.shape[3], im_scale]
+        ## scale the  ground truth box and clip to image boundary
         new_rec['boxes'] = clip_boxes(np.round(roi_rec['boxes'].copy() * im_scale), im_info[:2])
         new_rec['im_info'] = im_info
         processed_roidb.append(new_rec)
@@ -62,7 +101,9 @@ def get_segmentation_image(segdb, config):
         target_size = config.SCALES[scale_ind][0]
         max_size = config.SCALES[scale_ind][1]
         im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        ## mean substraction
         im_tensor = transform(im, config.network.PIXEL_MEANS)
+        ## [H, W, im_scale]
         im_info = [im_tensor.shape[2], im_tensor.shape[3], im_scale]
         new_rec['im_info'] = im_info
 
@@ -95,6 +136,9 @@ def resize(im, target_size, max_size, stride=0, interpolation = cv2.INTER_LINEAR
     if np.round(im_scale * im_size_max) > max_size:
         im_scale = float(max_size) / float(im_size_max)
     im = cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=interpolation)
+    #########################
+    # im = st.rescale(im,im_scale)
+    ##########################
 
     if stride == 0:
         return im, im_scale

@@ -16,7 +16,6 @@ from utils.tictoc import tic, toc
 from bbox.bbox_transform import clip_boxes
 import multiprocessing as mp
 
-
 def coco_results_one_category_kernel(data_pack):
     cat_id = data_pack['cat_id']
     ann_type = data_pack['ann_type']
@@ -76,12 +75,17 @@ class coco(IMDB):
         self.classes = ['__background__'] + cats
         self.num_classes = len(self.classes)
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
+        print 'Category info list of self.class: ', self.classes
+        # raise
         self._class_to_coco_ind = dict(zip(cats, self.coco.getCatIds()))
         self._coco_ind_to_class_ind = dict([(self._class_to_coco_ind[cls], self._class_to_ind[cls])
                                             for cls in self.classes[1:]])
-
-        # load image file names
+        self._class_ind_to_coco_ind = dict([(self._class_to_ind[cls], self._class_to_coco_ind[cls])
+                                            for cls in self.classes[1:]])        
+        # load image file names(imgage ids here)
         self.image_set_index = self._load_image_set_index()
+        # print self.image_set_index
+        # raise
         self.num_images = len(self.image_set_index)
         print 'num_images', self.num_images
         self.mask_size = mask_size
@@ -104,25 +108,26 @@ class coco(IMDB):
         image_ids = self.coco.getImgIds()
         return image_ids
 
-    def image_path_from_index(self, index):
-        """ example: images / train2014 / COCO_train2014_000000119993.jpg """
-        filename = 'COCO_%s_%012d.jpg' % (self.data_name, index)
-        image_path = os.path.join(self.data_path, 'images', self.data_name, filename)
-        assert os.path.exists(image_path), 'Path does not exist: {}'.format(image_path)
-        return image_path
+    # def image_path_from_index(self, index):
+    #     """ example: images / train2014 / COCO_train2014_000000119993.jpg """
+    #     filename = 'COCO_%s_%012d.jpg' % (self.data_name, index)
+    #     image_path = os.path.join(self.data_path, 'images', self.data_name, filename)
+    #     assert os.path.exists(image_path), 'Path does not exist: {}'.format(image_path)
+    #     return image_path
 
     def gt_roidb(self):
-        cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')
-        if os.path.exists(cache_file):
-            with open(cache_file, 'rb') as fid:
-                roidb = cPickle.load(fid)
-            print '{} gt roidb loaded from {}'.format(self.name, cache_file)
-            return roidb
-
+        # cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')
+        # if os.path.exists(cache_file):
+        #     with open(cache_file, 'rb') as fid:
+        #         roidb = cPickle.load(fid)
+        #     print '{} gt roidb loaded from {}'.format(self.name, cache_file)
+        #     return roidb
+        # print self.image_set_index
+        # raise
         gt_roidb = [self._load_coco_annotation(index) for index in self.image_set_index]
-        with open(cache_file, 'wb') as fid:
-            cPickle.dump(gt_roidb, fid, cPickle.HIGHEST_PROTOCOL)
-        print 'wrote gt roidb to {}'.format(cache_file)
+        # with open(cache_file, 'wb') as fid:
+        #     cPickle.dump(gt_roidb, fid, cPickle.HIGHEST_PROTOCOL)
+        # print 'wrote gt roidb to {}'.format(cache_file)
 
         return gt_roidb
 
@@ -137,11 +142,19 @@ class coco(IMDB):
         :param index: coco image id
         :return: roidb entry
         """
+        ## index here is image id
+        # print index, type(index)
         im_ann = self.coco.loadImgs(index)[0]
+        #img_name = im_ann['file_name'] if (im_ann['file_name'][:5]=='/core' or im_ann['file_name'][:4]=='http')  else '/core'+im_ann['file_name']
+        img_name = im_ann['file_name']
+	# img_name = self.image_path_from_index(index) 
+        # {u'license': 1, u'file_name': u'COCO_test2014_000000262144.jpg', u'coco_url': u'http://mscoco.org/images/262144', u'height': 480, u'width': 640, u'date_captured': u'2013-11-19 19:45:08', u'id': 262144}
         width = im_ann['width']
         height = im_ann['height']
 
+        ##list [476060, 631764]
         annIds = self.coco.getAnnIds(imgIds=index, iscrowd=False)
+        ##list of dicts [{u'area': 26222.943300000006, u'iscrowd': 0, u'image_id': 131089, u'bbox': [150.57, 109.27, 141.91, 317.73], u'category_id': 1, u'id': 476060}, {u'area': 3396.03385, u'iscrowd': 0, u'image_id': 131089, u'bbox': [43.56, 204.08, 160.03, 46.47], u'category_id': 39, u'id': 631764}]
         objs = self.coco.loadAnns(annIds)
 
         # sanitize bboxes
@@ -171,7 +184,7 @@ class coco(IMDB):
             else:
                 overlaps[ix, cls] = 1.0
 
-        roi_rec = {'image': self.image_path_from_index(index),
+        roi_rec = {'image': img_name,
                    'height': height,
                    'width': width,
                    'boxes': boxes,
@@ -263,9 +276,9 @@ class coco(IMDB):
             os.makedirs(res_folder)
         res_file = os.path.join(res_folder, 'detections_%s_results.json' % self.image_set)
         self._write_coco_results(detections, res_file, ann_type, all_masks)
-        if 'test' not in self.image_set:
-            info_str = self._do_python_eval(res_file, res_folder, ann_type)
-            return info_str
+        # if 'test' not in self.image_set:
+        info_str = self._do_python_eval(res_file, res_folder, ann_type)
+        return info_str
 
     def evaluate_sds(self, all_boxes, all_masks):
         info_str = self.evaluate_detections(all_boxes, 'segm', all_masks)
@@ -311,6 +324,8 @@ class coco(IMDB):
         pool.close()
         pool.join()
         results = sum(results, [])
+        ## results: list of dict
+        ## for cls in class: for index in all_index: sequence
         print 'Writing results json to %s' % res_file
         with open(res_file, 'w') as f:
             json.dump(results, f, sort_keys=True, indent=4)
@@ -333,7 +348,9 @@ class coco(IMDB):
     def _print_detection_metrics(self, coco_eval):
         info_str = ''
         IoU_lo_thresh = 0.5
-        IoU_hi_thresh = 0.95
+        IoU_hi_thresh = 0.5
+        maxDets = [1,10,100,200,300]
+        maxDets_idx = 2
 
         def _get_thr_ind(coco_eval, thr):
             ind = np.where((coco_eval.params.iouThrs > thr - 1e-5) &
@@ -349,20 +366,45 @@ class coco(IMDB):
         # area range index 0: all area ranges
         # max dets index 2: 100 per image
         precision = \
-            coco_eval.eval['precision'][ind_lo:(ind_hi + 1), :, :, 0, 2]
+            coco_eval.eval['precision'][ind_lo:(ind_hi + 1), :, :, 0, maxDets_idx]
         ap_default = np.mean(precision[precision > -1])
-        print '~~~~ Mean and per-category AP @ IoU=%.2f,%.2f] ~~~~' % (IoU_lo_thresh, IoU_hi_thresh)
-        info_str += '~~~~ Mean and per-category AP @ IoU=%.2f,%.2f] ~~~~\n' % (IoU_lo_thresh, IoU_hi_thresh)
+        print '~~~~ Mean and per-category AP @ [IoU=%.2f,%.2f] (MAX_DET=%d)~~~~' % (IoU_lo_thresh, IoU_hi_thresh, maxDets[maxDets_idx])
+        info_str += '~~~~ Mean and per-category AP @ [IoU=%.2f,%.2f] (MAX_DET=%d)~~~~\n' % (IoU_lo_thresh, IoU_hi_thresh, maxDets[maxDets_idx])
         print '%-15s %5.1f' % ('all', 100 * ap_default)
         info_str += '%-15s %5.1f\n' % ('all', 100 * ap_default)
         for cls_ind, cls in enumerate(self.classes):
             if cls == '__background__':
                 continue
+            #####
+            cls_ind = self._class_ind_to_coco_ind[cls_ind]    
             # minus 1 because of __background__
-            precision = coco_eval.eval['precision'][ind_lo:(ind_hi + 1), :, cls_ind - 1, 0, 2]
+            precision = coco_eval.eval['precision'][ind_lo:(ind_hi + 1), :, cls_ind - 1, 0, maxDets_idx]
             ap = np.mean(precision[precision > -1])
             print '%-15s %5.1f' % (cls, 100 * ap)
             info_str +=  '%-15s %5.1f\n' % (cls, 100 * ap)
+        #######################################################################################
+        IoU_lo_thresh = 0.75
+        IoU_hi_thresh = 0.75       
+        ind_lo = _get_thr_ind(coco_eval, IoU_lo_thresh)
+        ind_hi = _get_thr_ind(coco_eval, IoU_hi_thresh)        
+        precision = \
+            coco_eval.eval['precision'][ind_lo:(ind_hi + 1), :, :, 0, maxDets_idx]
+        ap_default = np.mean(precision[precision > -1])
+        print '~~~~ Mean and per-category AP @ [IoU=%.2f,%.2f] (MAX_DET=%d)~~~~' % (IoU_lo_thresh, IoU_hi_thresh, maxDets[maxDets_idx])
+        info_str += '~~~~ Mean and per-category AP @ [IoU=%.2f,%.2f] (MAX_DET=%d)~~~~\n' % (IoU_lo_thresh, IoU_hi_thresh, maxDets[maxDets_idx])
+        print '%-15s %5.1f' % ('all', 100 * ap_default)
+        info_str += '%-15s %5.1f\n' % ('all', 100 * ap_default)
+        for cls_ind, cls in enumerate(self.classes):
+            if cls == '__background__':
+                continue
+            #####
+            cls_ind = self._class_ind_to_coco_ind[cls_ind]    
+            # minus 1 because of __background__
+            precision = coco_eval.eval['precision'][ind_lo:(ind_hi + 1), :, cls_ind - 1, 0, maxDets_idx]
+            ap = np.mean(precision[precision > -1])
+            print '%-15s %5.1f' % (cls, 100 * ap)
+            info_str +=  '%-15s %5.1f\n' % (cls, 100 * ap)        
+        #######################################################################################            
 
         print '~~~~ Summary metrics ~~~~'
         coco_eval.summarize()
